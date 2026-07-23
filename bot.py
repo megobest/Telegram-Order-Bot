@@ -146,11 +146,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Deep linking check for 'Order Now' button click from channel
     if context.args and len(context.args) > 0 and context.args[0].startswith("order"):
-        # Decode channel details passed in parameter
+        # Extract source channel info from parameters
         raw_info = context.args[0].replace("order_", "")
-        context.user_data['source_chat'] = raw_info.replace("___", " ").replace("__", " @") if raw_info else "የታወቀ ቻናል"
+        
+        # Clean formatting for channel info
+        formatted_channel_info = raw_info.replace("___", " ").replace("LINK:", "(@").replace(":LINK", ")") if raw_info else "ያልታወቀ ቻናል/Group"
+        context.user_data['source_chat'] = formatted_channel_info
 
-        await update.message.reply_text("👋 <b>እንኳን ደህና መጡ! ትእዛዝዎን ለመመዝገብ እባክዎ ሙሉ ስምዎን ያስገቡ፦</b>", parse_mode="HTML")
+        await update.message.reply_text("👋 <b>እንኳን ደህና መጡ! ትእዛዝዎን ለመመዝገብ፦</b>\n\n1️⃣ <b>እባክዎ ሙሉ ስምዎን ያስገቡ፦</b>", parse_mode="HTML")
         return NAME
 
     active, expire_date = is_user_active(user.id)
@@ -299,17 +302,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------------------------------------
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['name'] = update.message.text
-    await update.message.reply_text("📞 <b>ስልክ ቁጥርዎን ያስገቡ፦</b> (ለምሳሌ፦ 09xxxxxxxx)", parse_mode="HTML")
+    await update.message.reply_text("2️⃣ <b>ስልክ ቁጥርዎን ያስገቡ፦</b> (ለምሳሌ፦ 09xxxxxxxx)", parse_mode="HTML")
     return PHONE
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['phone'] = update.message.text
-    await update.message.reply_text("📍 <b>አድራሻዎን ያስገቡ፦</b> (ከተማ/ክፍለ ከተማ)", parse_mode="HTML")
+    await update.message.reply_text("3️⃣ <b>አድራሻዎን ያስገቡ፦</b> (ከተማ/ክፍለ ከተማ/የቦታው ስም)", parse_mode="HTML")
     return ADDRESS
 
 async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['address'] = update.message.text
-    await update.message.reply_text("🔢 <b>የሚፈልጉትን ብዛት (Quantity) ያስገቡ፦</b>", parse_mode="HTML")
+    await update.message.reply_text("4️⃣ <b>የሚፈልጉትን የምርት ብዛት (Quantity) ያስገቡ፦</b>", parse_mode="HTML")
     return QUANTITY
 
 async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -317,7 +320,7 @@ async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     source_chat = context.user_data.get('source_chat', 'ያልታወቀ ቻናል/Group')
 
-    # Formatting order info matching the photo layout
+    # Formatting order details for Orders Hub channel
     hub_message = (
         "🚨 <b>አዲስ ትእዛዝ ደርሷል!</b> 🚨\n\n"
         f"👤 <b>የደንበኛ ስም፦</b> {context.user_data.get('name')}\n"
@@ -394,12 +397,12 @@ async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.channel_post:
         chat_title = update.channel_post.chat.title or ""
-        chat_username = f"(@{update.channel_post.chat.username})" if update.channel_post.chat.username else ""
-        chat_id = update.channel_post.chat.id
+        chat_username = f"LINK:{update.channel_post.chat.username}:LINK" if update.channel_post.chat.username else ""
+        chat_id = f"ID:{update.channel_post.chat.id}"
     elif update.message and (update.message.chat.type in ['group', 'supergroup']):
         chat_title = update.message.chat.title or ""
-        chat_username = f"(@{update.message.chat.username})" if update.message.chat.username else ""
-        chat_id = update.message.chat.id
+        chat_username = f"LINK:{update.message.chat.username}:LINK" if update.message.chat.username else ""
+        chat_id = f"ID:{update.message.chat.id}"
 
     if not sender_id:
         return
@@ -407,8 +410,8 @@ async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active, expire_date = is_user_active(sender_id)
 
     if active:
-        # Build clean string containing title, username & ID for the deep link
-        channel_info_str = f"{chat_title}___{chat_username}___ID:_{chat_id}".replace(" ", "___")
+        # Construct parameters string safely
+        channel_info_str = f"{chat_title}___{chat_username}___|___{chat_id}".replace(" ", "___")
         start_url = f"https://t.me/{context.bot.username}?start=order_{channel_info_str}"
         
         keyboard = [[InlineKeyboardButton("🛒 Order Now / አሁኑኑ ይዘዙ", url=start_url)]]
