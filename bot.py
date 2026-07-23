@@ -6,6 +6,7 @@ from threading import Thread
 
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -48,7 +49,7 @@ logging.basicConfig(
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8770076033:AAGNZ-Obug4bN_Yb_MzPJzy2-La6fb_W7lg")
 ADMIN_USER_ID = 5997262731  # የሃይሌ Admin User ID
 
-# ⚠️ እዚህ ላይ የ Orders Hub ቻናልህን ID ተካ (ለምሳሌ -100xxx)
+# የ Orders Hub ቻናል ID
 ORDERS_HUB_ID = os.environ.get("ORDERS_HUB_ID", "-1004366552032") 
 
 ACCOUNT_HOLDER = "Hailemichael Mebrate"
@@ -119,6 +120,7 @@ def set_user_sub(user_id, days, mark_trial=False):
 # ---------------------------------------------------------
 def main_menu_keyboard():
     keyboard = [
+        [InlineKeyboardButton("🎁 የ 3 ቀን ነፃ ሙከራ (Free Trial)", callback_data="btn_trial")],
         [InlineKeyboardButton("💳 የክፍያ ፓኬጆች (Packages)", callback_data="btn_packages")],
         [InlineKeyboardButton("ℹ️ ስለ ቦቱ (About)", callback_data="btn_about")],
         [InlineKeyboardButton("📞 ድጋፍ እና እገዛ (Support)", callback_data="btn_info")]
@@ -144,35 +146,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Deep linking check for 'Order Now' button click from channel
     if context.args and len(context.args) > 0 and context.args[0].startswith("order"):
-        # Save channel origin info if available
-        parts = context.args[0].split("_")
-        if len(parts) > 1:
-            context.user_data['source_chat'] = parts[1]
-        else:
-            context.user_data['source_chat'] = "Unknown Channel"
+        # Decode channel details passed in parameter
+        raw_info = context.args[0].replace("order_", "")
+        context.user_data['source_chat'] = raw_info.replace("___", " ").replace("__", " @") if raw_info else "የታወቀ ቻናል"
 
         await update.message.reply_text("👋 <b>እንኳን ደህና መጡ! ትእዛዝዎን ለመመዝገብ እባክዎ ሙሉ ስምዎን ያስገቡ፦</b>", parse_mode="HTML")
         return NAME
 
-    # Auto Check Free Trial status
-    row = get_user_sub(user.id)
-    if not row or row[1] == 0:
-        # First time join! Give 3 Days Free Trial automatically
-        expire_str = set_user_sub(user.id, days=3, mark_trial=True)
-        trial_msg = (
-            f"🎉 <b>እንኳን ደስ አለዎት {first_name}! የ 3 ቀን ነፃ ሙከራ (Free Trial) ተፈቅዶልዎታል።</b>\n\n"
-            f"📅 <b>አገልግሎቱ የሚያበቃበት ቀን፦</b> <code>{expire_str}</code>\n\n"
-            "👉 <b>ቦቱን መጠቀም ለመጀመር፦</b>\n"
-            "1. ቦቱን ወደ ቻናልዎ ወይም ግሩፕዎ አባል ያድርጉት።\n"
-            "2. በቻናሉ/ግሩፑ ላይ <b>Admin (አድሚን)</b> አድርገው ይሾሙት።\n\n"
-            "ከዚያ በኋላ በቻናልዎ በሚለቀቁ ፖስቶች ስር አውቶማቲክ የ <b>🛒 Order Now</b> አዝራር ይጨምራል! 🚀"
-        )
-        if update.message:
-            await update.message.reply_text(trial_msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
-        return ConversationHandler.END
-
     active, expire_date = is_user_active(user.id)
-    status_text = f"🟢 <b>አካውንትዎ አክቲቭ ነው!</b> (እስከ {expire_date.strftime('%Y-%m-%d')} ድረስ)" if active else "🔴 <b>የአገልግሎት ጊዜዎ አብቅቷል!</b> እባክዎ ፓኬጅ ይምረጡ።"
+    status_text = f"🟢 <b>አካውንትዎ አክቲቭ ነው!</b> (እስከ {expire_date.strftime('%Y-%m-%d')} ድረስ)" if active else "🔴 <b>የአገልግሎት ጊዜዎ አልቋል ወይም አልተጀመረም!</b>"
 
     text = (
         f"ሰላም <b>{first_name}</b>! 👋\n\n"
@@ -181,10 +163,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "እባክዎ ከታች ካሉት አማራጮች አንዱን ይምረጡ፦"
     )
     
-    if update.message:
-        await update.message.reply_text(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
-    elif update.callback_query:
-        await update.callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
+    try:
+        if update.message:
+            await update.message.reply_text(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
+        elif update.callback_query:
+            await update.callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu_keyboard())
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            pass
+        else:
+            raise e
+
     return ConversationHandler.END
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -193,88 +182,117 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    if data == "btn_main_menu":
-        await start(update, context)
+    try:
+        if data == "btn_main_menu":
+            await start(update, context)
 
-    elif data == "btn_packages":
-        await query.message.edit_text(
-            "💳 <b>እባክዎ የሚፈልጉትን የደንበኝነት ፓኬጅ ይምረጡ፦</b>",
-            parse_mode="HTML",
-            reply_markup=package_keyboard()
-        )
+        elif data == "btn_trial":
+            row = get_user_sub(user_id)
+            if row and row[1] == 1:
+                await query.message.edit_text(
+                    "❌ <b>የነፃ ሙከራ እድልዎን አስቀድመው ተቀምተዋል!</b>\n\n"
+                    "አገልግሎቱን መቀጠል ከፈለጉ እባክዎ የክፍያ ፓኬጆችን ይምረጡ፦",
+                    parse_mode="HTML",
+                    reply_markup=package_keyboard()
+                )
+            else:
+                expire_str = set_user_sub(user_id, days=3, mark_trial=True)
+                await query.message.edit_text(
+                    f"🎉 <b>እንኳን ደስ አለዎት! የ 3 ቀን ነፃ ሙከራዎ ተጀምሯል!</b>\n\n"
+                    f"📅 <b>አገልግሎቱ የሚያበቃበት ቀን፦</b> <code>{expire_str}</code>\n\n"
+                    "👉 <b>ቦቱን መጠቀም ለመጀመር፦</b>\n"
+                    "1. ቦቱን ወደ ቻናልዎ ወይም ግሩፕዎ አባል አድርገው ይጨምሩት።\n"
+                    "2. በቻናሉ/ግሩፑ ላይ <b>Admin (አድሚን)</b> አድርገው ይሾሙት።\n\n"
+                    "ከዚያ በኋላ በቻናልዎ በሚለቀቁ ፖስቶች ስር አውቶማቲክ የ <b>🛒 Order Now</b> አዝራር ይጨምራል! 🚀",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ወደ ዋናው ማውጫ", callback_data="btn_main_menu")]])
+                )
 
-    elif data in ["pkg_bronze", "pkg_silver", "pkg_gold", "pkg_yearly"]:
-        pkg_names = {
-            "pkg_bronze": ("Bronze (1 ወር)", "150 ETB"),
-            "pkg_silver": ("Silver (3 ወር)", "300 ETB"),
-            "pkg_gold": ("Gold (6 ወር)", "500 ETB"),
-            "pkg_yearly": ("1 ዓመት (12 ወር)", "950 ETB")
-        }
-        selected_pkg, price = pkg_names[data]
-        context.user_data['selected_pkg'] = selected_pkg
-
-        payment_text = (
-            f"🛒 <b>የተመረጠው ፓኬጅ፦ {selected_pkg}</b>\n"
-            f"💰 <b>ክፍያ፦ {price}</b>\n\n"
-            f"👤 <b>የአካውንት ስም፦</b> <code>{ACCOUNT_HOLDER}</code>\n\n"
-            f"📱 <b>Telebirr:</b> <code>{TELEBIRR_NO}</code>\n"
-            f"🏦 <b>Awash Bank:</b> <code>{AWASH_NO}</code>\n"
-            f"🏦 <b>Dashen Bank:</b> <code>{DASHEN_NO}</code>\n"
-            f"🏦 <b>Bank of Abyssinia:</b> <code>{ABYSSINIA_NO}</code>\n\n"
-            "ከላይ በተጠቀሱት አካውንቶች ክፍያውን ፈጽመው <b>የደረሰኙን ስክሪንሾት (Photo/Receipt)</b> እዚህ ይላኩልን፦"
-        )
-        await query.message.edit_text(payment_text, parse_mode="HTML")
-        return PAYMENT_RECEIPT
-
-    elif data == "btn_about":
-        about_text = (
-            "ℹ️ <b>ስለ ቦቱ መረጃ፦</b>\n\n"
-            "ይህ ቦት የንግድ ቻናሎች እና ግሩፖች ምርቶቻቸውን በቀላሉ ለደንበኞች እንዲሸጡ የተሰራ አውቶሜሽን ሲስተም ነው፡፡\n\n"
-            "✨ <b>ዋና ዋና ጥቅሞች፦</b>\n"
-            "• በቻናልዎ በሚለቀቁ ፎቶዎች ስር የ 'Order Now' አዝራር አውቶማቲክ ይጨምራል።\n"
-            "• የደንበኞችን የስም፣ ስልክ እና አድራሻ መረጃ በስርዓት ይሰበስባል።\n"
-            "• ትእዛዞችን በቀጥታ ወደ Orders Hub ቻናል ይልካል።"
-        )
-        await query.message.edit_text(
-            about_text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ወደ ዋናው ማውጫ", callback_data="btn_main_menu")]])
-        )
-
-    elif data == "btn_info":
-        info_text = (
-            "📞 <b>ድጋፍ እና እገዛ (Support & Info)፦</b>\n\n"
-            f"👤 <b>የቦቱ ባለቤት/አድሚን፦</b> {ACCOUNT_HOLDER}\n"
-            "💬 <b>ለማንኛውም ጥያቄ ወይም እገዛ፦</b> @Haile_Admin\n"
-            f"📞 <b>ስልክ፦</b> {TELEBIRR_NO}\n\n"
-            "ማንኛውም አይነት ችግር ካጋጠመዎት በደስታ እንረዳዎታለን!"
-        )
-        await query.message.edit_text(
-            info_text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ወደ ዋናው ማውጫ", callback_data="btn_main_menu")]])
-        )
-
-    elif data.startswith("approve_sub_"):
-        parts = data.split("_")
-        target_user_id = int(parts[2])
-        days = int(parts[3])
-
-        expire_str = set_user_sub(target_user_id, days)
-
-        if query.message.caption:
-            await query.edit_message_caption(caption=query.message.caption + f"\n\n🟢 <b>ይህ አባል ለ {days} ቀናት አክቲቭ ሆኗል! (እስከ {expire_str})</b>", parse_mode="HTML")
-        else:
-            await query.edit_message_text(text=query.message.text + f"\n\n🟢 <b>ይህ አባል ለ {days} ቀናት አክቲቭ ሆኗል! (እስከ {expire_str})</b>", parse_mode="HTML")
-
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=f"🎉 <b>ክፍያዎ ጸድቋል!</b>\n\nአገልግሎቱ ለ {days} ቀናት ተራዝሟል (እስከ {expire_str} ድረስ)። ቦቱን መጠቀም መቀጠል ይችላሉ!",
-                parse_mode="HTML"
+        elif data == "btn_packages":
+            await query.message.edit_text(
+                "💳 <b>እባክዎ የሚፈልጉትን የደንበኝነት ፓኬጅ ይምረጡ፦</b>",
+                parse_mode="HTML",
+                reply_markup=package_keyboard()
             )
-        except Exception:
+
+        elif data in ["pkg_bronze", "pkg_silver", "pkg_gold", "pkg_yearly"]:
+            pkg_names = {
+                "pkg_bronze": ("Bronze (1 ወር)", "150 ETB"),
+                "pkg_silver": ("Silver (3 ወር)", "300 ETB"),
+                "pkg_gold": ("Gold (6 ወር)", "500 ETB"),
+                "pkg_yearly": ("1 ዓመት (12 ወር)", "950 ETB")
+            }
+            selected_pkg, price = pkg_names[data]
+            context.user_data['selected_pkg'] = selected_pkg
+
+            payment_text = (
+                f"🛒 <b>የተመረጠው ፓኬጅ፦ {selected_pkg}</b>\n"
+                f"💰 <b>ክፍያ፦ {price}</b>\n\n"
+                f"👤 <b>የአካውንት ስም፦</b> <code>{ACCOUNT_HOLDER}</code>\n\n"
+                f"📱 <b>Telebirr:</b> <code>{TELEBIRR_NO}</code>\n"
+                f"🏦 <b>Awash Bank:</b> <code>{AWASH_NO}</code>\n"
+                f"🏦 <b>Dashen Bank:</b> <code>{DASHEN_NO}</code>\n"
+                f"🏦 <b>Bank of Abyssinia:</b> <code>{ABYSSINIA_NO}</code>\n\n"
+                "ከላይ በተጠቀሱት አካውንቶች ክፍያውን ፈጽመው <b>የደረሰኙን ስክሪንሾት (Photo/Receipt)</b> እዚህ ይላኩልን፦"
+            )
+            await query.message.edit_text(payment_text, parse_mode="HTML")
+            return PAYMENT_RECEIPT
+
+        elif data == "btn_about":
+            about_text = (
+                "ℹ️ <b>ስለ ቦቱ መረጃ፦</b>\n\n"
+                "ይህ ቦት የንግድ ቻናሎች እና ግሩፖች ምርቶቻቸውን በቀላሉ ለደንበኞች እንዲሸጡ የተሰራ አውቶሜሽን ሲስተም ነው፡፡\n\n"
+                "✨ <b>ዋና ዋና ጥቅሞች፦</b>\n"
+                "• በቻናልዎ በሚለቀቁ ፎቶዎች ስር የ 'Order Now' አዝራር አውቶማቲክ ይጨምራል።\n"
+                "• የደንበኞችን የስም፣ ስልክ እና አድራሻ መረጃ በስርዓት ይሰበስባል።\n"
+                "• ትእዛዞችን በቀጥታ ወደ Orders Hub ቻናል ይልካል።"
+            )
+            await query.message.edit_text(
+                about_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ወደ ዋናው ማውጫ", callback_data="btn_main_menu")]])
+            )
+
+        elif data == "btn_info":
+            info_text = (
+                "📞 <b>ድጋፍ እና እገዛ (Support & Info)፦</b>\n\n"
+                f"👤 <b>የቦቱ ባለቤት/አድሚን፦</b> {ACCOUNT_HOLDER}\n"
+                "💬 <b>ለማንኛውም ጥያቄ ወይም እገዛ፦</b> @megobest\n"
+                f"📞 <b>ስልክ፦</b> {TELEBIRR_NO}\n\n"
+                "ማንኛውም አይነት ችግር ካጋጠመዎት በደስታ እንረዳዎታለን!"
+            )
+            await query.message.edit_text(
+                info_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ወደ ዋናው ማውጫ", callback_data="btn_main_menu")]])
+            )
+
+        elif data.startswith("approve_sub_"):
+            parts = data.split("_")
+            target_user_id = int(parts[2])
+            days = int(parts[3])
+
+            expire_str = set_user_sub(target_user_id, days)
+
+            if query.message.caption:
+                await query.edit_message_caption(caption=query.message.caption + f"\n\n🟢 <b>ይህ አባል ለ {days} ቀናት አክቲቭ ሆኗል! (እስከ {expire_str})</b>", parse_mode="HTML")
+            else:
+                await query.edit_message_text(text=query.message.text + f"\n\n🟢 <b>ይህ አባል ለ {days} ቀናት አክቲቭ ሆኗል! (እስከ {expire_str})</b>", parse_mode="HTML")
+
+            try:
+                await context.bot.send_message(
+                    chat_id=target_user_id,
+                    text=f"🎉 <b>ክፍያዎ ጸድቋል!</b>\n\nአገልግሎቱ ለ {days} ቀናት ተራዝሟል (እስከ {expire_str} ድረስ)። ቦቱን መጠቀም መቀጠል ይችላሉ!",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
             pass
+        else:
+            raise e
 
 # ---------------------------------------------------------
 # 7. CONVERSATION FLOW (ORDER FORM & RECEIPTS)
@@ -297,9 +315,9 @@ async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['quantity'] = update.message.text
     user = update.effective_user
-    source_chat = context.user_data.get('source_chat', 'Unknown Channel/Group')
+    source_chat = context.user_data.get('source_chat', 'ያልታወቀ ቻናል/Group')
 
-    # Exactly matching the structure in the screenshot
+    # Formatting order info matching the photo layout
     hub_message = (
         "🚨 <b>አዲስ ትእዛዝ ደርሷል!</b> 🚨\n\n"
         f"👤 <b>የደንበኛ ስም፦</b> {context.user_data.get('name')}\n"
@@ -321,7 +339,6 @@ async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=ORDERS_HUB_ID, text=hub_message, parse_mode="HTML")
     except Exception as e:
         logging.error(f"Failed to send order to Orders Hub: {e}")
-        # Fallback send to admin private chat if Orders Hub fails
         await context.bot.send_message(chat_id=ADMIN_USER_ID, text=hub_message, parse_mode="HTML")
 
     return ConversationHandler.END
@@ -371,12 +388,18 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id if update.effective_user else None
     
-    # If channel post, get channel title/id
-    chat_info = ""
+    chat_title = ""
+    chat_username = ""
+    chat_id = ""
+
     if update.channel_post:
-        chat_info = f"{update.channel_post.chat.title} | ID: {update.channel_post.chat.id}"
+        chat_title = update.channel_post.chat.title or ""
+        chat_username = f"(@{update.channel_post.chat.username})" if update.channel_post.chat.username else ""
+        chat_id = update.channel_post.chat.id
     elif update.message and (update.message.chat.type in ['group', 'supergroup']):
-        chat_info = f"{update.message.chat.title} | ID: {update.message.chat.id}"
+        chat_title = update.message.chat.title or ""
+        chat_username = f"(@{update.message.chat.username})" if update.message.chat.username else ""
+        chat_id = update.message.chat.id
 
     if not sender_id:
         return
@@ -384,9 +407,9 @@ async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active, expire_date = is_user_active(sender_id)
 
     if active:
-        # Pass channel info inside start deep link
-        clean_chat_info = chat_info.replace(" ", "_") if chat_info else "Channel"
-        start_url = f"https://t.me/{context.bot.username}?start=order_{clean_chat_info}"
+        # Build clean string containing title, username & ID for the deep link
+        channel_info_str = f"{chat_title}___{chat_username}___ID:_{chat_id}".replace(" ", "___")
+        start_url = f"https://t.me/{context.bot.username}?start=order_{channel_info_str}"
         
         keyboard = [[InlineKeyboardButton("🛒 Order Now / አሁኑኑ ይዘዙ", url=start_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -407,7 +430,7 @@ async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=sender_id,
                 text=(
-                    "⚠️ <b>የ 3 ቀን ነፃ ሙከራዎ ወይም የአገልግሎት ጊዜዎ አብቅቷል!</b>\n\n"
+                    "⚠️ <b>የአገልግሎት ጊዜዎ አብቅቷል!</b>\n\n"
                     "በቻናልዎ/ግሩፕዎ ላይ የ 'Order Now' አዝራር መጨመር ለመቀጠል እባክዎ የክፍያ ፓኬጅ ይምረጡ፦"
                 ),
                 parse_mode="HTML",
