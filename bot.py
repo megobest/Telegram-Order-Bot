@@ -146,7 +146,7 @@ def main():
         .build()
     )
 
-    conv_handler = ConversationHandler(
+   conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
@@ -154,9 +154,13 @@ def main():
             ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
             QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_quantity)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("start", start)], # <-- ቦቱ ከየትኛውም ደረጃ ወደ መጀመሪያ እንዲመለስ ያደርገዋል
     )
 
+    # 1. መጀመሪያ ለብቻው የ start handler እናስገባለን
+    application.add_handler(CommandHandler("start", start))
+    
+    # 2. በመቀጠል የ conversation handler እናያይዛለን
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(CommandHandler("approve", approve_user))
@@ -164,6 +168,7 @@ def main():
     application.add_handler(MessageHandler(
         filters.ALL & ~filters.COMMAND, 
         handle_posts
+    ))
     ))
 
     # Error Handler ማያያዝ
