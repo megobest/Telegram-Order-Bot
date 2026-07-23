@@ -45,8 +45,8 @@ logging.basicConfig(
 # ---------------------------------------------------------
 # 3. GLOBAL VARIABLES & CONSTANTS
 # ---------------------------------------------------------
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", "123456789"))  # ያንተን Admin ID አድርገው
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8770076033:AAGNZ-Obug4bN_Yb_MzPJzy2-La6fb_W7lg")
+ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", "5997262731"))  # ያንተን Admin ID አድርገው
 
 NAME, PHONE, ADDRESS, QUANTITY = range(4)
 
