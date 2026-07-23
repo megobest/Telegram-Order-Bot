@@ -132,6 +132,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 # 6. MAIN FUNCTION
 # ---------------------------------------------------------
 def main():
+  # ---------------------------------------------------------
+# 6. MAIN FUNCTION
+# ---------------------------------------------------------
+def main():
     # 🟢 Render 24/7 PORT እንዲያገኝ Flask Server እናስነሳለን
     keep_alive()
 
@@ -146,7 +150,7 @@ def main():
         .build()
     )
 
-   conv_handler = ConversationHandler(
+    conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
@@ -154,7 +158,7 @@ def main():
             ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
             QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_quantity)],
         },
-        fallbacks=[CommandHandler("start", start)], # <-- ቦቱ ከየትኛውም ደረጃ ወደ መጀመሪያ እንዲመለስ ያደርገዋል
+        fallbacks=[CommandHandler("start", start)],
     )
 
     # 1. መጀመሪያ ለብቻው የ start handler እናስገባለን
@@ -169,7 +173,6 @@ def main():
         filters.ALL & ~filters.COMMAND, 
         handle_posts
     ))
-    ))
 
     # Error Handler ማያያዝ
     application.add_error_handler(error_handler)
@@ -177,6 +180,7 @@ def main():
     print("🤖 ቦቱ ስራ ጀምሯል...")
     # Network ኤረር ሲያጋጥመው አውቶማቲክ ድጋሚ እንዲሞክር (bootstrap_retries=-1)
     application.run_polling(drop_pending_updates=True, bootstrap_retries=-1)
+
 
 if __name__ == "__main__":
     main()
