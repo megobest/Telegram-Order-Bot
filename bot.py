@@ -48,6 +48,9 @@ logging.basicConfig(
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8770076033:AAGNZ-Obug4bN_Yb_MzPJzy2-La6fb_W7lg")
 ADMIN_USER_ID = 5997262731  # የሃይሌ Admin User ID
 
+# ⚠️ እዚህ ላይ የ Orders Hub ቻናልህን ID ተካ (ለምሳሌ -100xxx)
+ORDERS_HUB_ID = os.environ.get("ORDERS_HUB_ID", "-1004366552032") 
+
 ACCOUNT_HOLDER = "Hailemichael Mebrate"
 TELEBIRR_NO = "0979484319"
 AWASH_NO = "013201354775100"
@@ -116,7 +119,6 @@ def set_user_sub(user_id, days, mark_trial=False):
 # ---------------------------------------------------------
 def main_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🎁 የ 3 ቀን ነፃ ሙከራ (Free Trial)", callback_data="btn_trial")],
         [InlineKeyboardButton("💳 የክፍያ ፓኬጆች (Packages)", callback_data="btn_packages")],
         [InlineKeyboardButton("ℹ️ ስለ ቦቱ (About)", callback_data="btn_about")],
         [InlineKeyboardButton("📞 ድጋፍ እና እገዛ (Support)", callback_data="btn_info")]
@@ -140,11 +142,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     first_name = user.first_name if user.first_name else "ወዳጄ"
 
+    # Deep linking check for 'Order Now' button click from channel
+    if context.args and len(context.args) > 0 and context.args[0].startswith("order"):
+        # Save channel origin info if available
+        parts = context.args[0].split("_")
+        if len(parts) > 1:
+            context.user_data['source_chat'] = parts[1]
+        else:
+            context.user_data['source_chat'] = "Unknown Channel"
+
+        await update.message.reply_text("👋 <b>እንኳን ደህና መጡ! ትእዛዝዎን ለመመዝገብ እባክዎ ሙሉ ስምዎን ያስገቡ፦</b>", parse_mode="HTML")
+        return NAME
+
+    # Auto Check Free Trial status
+    row = get_user_sub(user.id)
+    if not row or row[1] == 0:
+        # First time join! Give 3 Days Free Trial automatically
+        expire_str = set_user_sub(user.id, days=3, mark_trial=True)
+        trial_msg = (
+            f"🎉 <b>እንኳን ደስ አለዎት {first_name}! የ 3 ቀን ነፃ ሙከራ (Free Trial) ተፈቅዶልዎታል።</b>\n\n"
+            f"📅 <b>አገልግሎቱ የሚያበቃበት ቀን፦</b> <code>{expire_str}</code>\n\n"
+            "👉 <b>ቦቱን መጠቀም ለመጀመር፦</b>\n"
+            "1. ቦቱን ወደ ቻናልዎ ወይም ግሩፕዎ አባል ያድርጉት።\n"
+            "2. በቻናሉ/ግሩፑ ላይ <b>Admin (አድሚን)</b> አድርገው ይሾሙት።\n\n"
+            "ከዚያ በኋላ በቻናልዎ በሚለቀቁ ፖስቶች ስር አውቶማቲክ የ <b>🛒 Order Now</b> አዝራር ይጨምራል! 🚀"
+        )
+        if update.message:
+            await update.message.reply_text(trial_msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
+        return ConversationHandler.END
+
+    active, expire_date = is_user_active(user.id)
+    status_text = f"🟢 <b>አካውንትዎ አክቲቭ ነው!</b> (እስከ {expire_date.strftime('%Y-%m-%d')} ድረስ)" if active else "🔴 <b>የአገልግሎት ጊዜዎ አብቅቷል!</b> እባክዎ ፓኬጅ ይምረጡ።"
+
     text = (
         f"ሰላም <b>{first_name}</b>! 👋\n\n"
+        f"የአካውንትዎ ሁኔታ፦ {status_text}\n\n"
         "🤖 <b>እንኳን ወደ አውቶማቲክ የቴሌግራም የትእዛዝ መቀበያ ቦት በደህና መጡ!</b>\n\n"
-        "ይህ ቦት ለቻናልዎ ወይም ለግሩፕዎ አውቶማቲክ 🛒 <b>'Order Now'</b> አዝራር በመጨመር "
-        "ከደንበኞችዎ የትእዛዝ መረጃዎችን ሰብስቦ ወደ እርሶ ያደርሳል፡፡\n\n"
         "እባክዎ ከታች ካሉት አማራጮች አንዱን ይምረጡ፦"
     )
     
@@ -162,25 +195,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "btn_main_menu":
         await start(update, context)
-
-    elif data == "btn_trial":
-        row = get_user_sub(user_id)
-        if row and row[1] == 1:
-            await query.message.edit_text(
-                "❌ <b>የነፃ ሙከራ እድልዎን አስቀድመው ተቀምተዋል!</b>\n\n"
-                "አገልግሎቱን መቀጠል ከፈለጉ እባክዎ የክፍያ ፓኬጆችን ይምረጡ፦",
-                parse_mode="HTML",
-                reply_markup=package_keyboard()
-            )
-        else:
-            expire_str = set_user_sub(user_id, days=3, mark_trial=True)
-            await query.message.edit_text(
-                f"🎉 <b>እንኳን ደስ አለዎት! የ 3 ቀን ነፃ ሙከራዎ ተጀምሯል!</b>\n\n"
-                f"📅 <b>አገልግሎቱ የሚያበቃበት ቀን፦</b> <code>{expire_str}</code>\n\n"
-                "አሁን ቦቱን በቻናልዎ ወይም በግሩፕዎ ላይ Admin አድርገው በመጨመር መጠቀም መጀመር ይችላሉ! 🚀",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ወደ ዋናው ማውጫ", callback_data="btn_main_menu")]])
-            )
 
     elif data == "btn_packages":
         await query.message.edit_text(
@@ -219,8 +233,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✨ <b>ዋና ዋና ጥቅሞች፦</b>\n"
             "• በቻናልዎ በሚለቀቁ ፎቶዎች ስር የ 'Order Now' አዝራር አውቶማቲክ ይጨምራል።\n"
             "• የደንበኞችን የስም፣ ስልክ እና አድራሻ መረጃ በስርዓት ይሰበስባል።\n"
-            "• ትእዛዞችን በቀጥታ ወደ እርሶ የግል ቴሌግራም ይልካል።\n"
-            "• የ 24 ሰአት የደንበኞች ድጋፍ አለው።"
+            "• ትእዛዞችን በቀጥታ ወደ Orders Hub ቻናል ይልካል።"
         )
         await query.message.edit_text(
             about_text,
@@ -263,18 +276,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    elif data.startswith("approve_order_"):
-        target_user_id = int(data.split("_")[2])
-        if query.message.caption:
-            await query.edit_message_caption(caption=query.message.caption + "\n\n🟢 <b>ትእዛዙ በአድሚን ጸድቋል!</b>", parse_mode="HTML")
-        else:
-            await query.edit_message_text(text=query.message.text + "\n\n🟢 <b>ትእዛዙ በአድሚን ጸድቋል!</b>", parse_mode="HTML")
-
-        try:
-            await context.bot.send_message(chat_id=target_user_id, text="🎉 <b>ትእዛዝዎ እና ክፍያዎ ጸድቋል!</b> በአጭር ጊዜ ውስጥ እናደርሳለን።", parse_mode="HTML")
-        except Exception:
-            pass
-
 # ---------------------------------------------------------
 # 7. CONVERSATION FLOW (ORDER FORM & RECEIPTS)
 # ---------------------------------------------------------
@@ -290,21 +291,24 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['address'] = update.message.text
-    await update.message.reply_text("📦 <b>የሚፈልጉትን ብዛት (Quantity) ያስገቡ፦</b>", parse_mode="HTML")
+    await update.message.reply_text("🔢 <b>የሚፈልጉትን ብዛት (Quantity) ያስገቡ፦</b>", parse_mode="HTML")
     return QUANTITY
 
 async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['quantity'] = update.message.text
     user = update.effective_user
+    source_chat = context.user_data.get('source_chat', 'Unknown Channel/Group')
 
-    summary = (
-        "📥 <b>አዲስ የትእዛዝ መረጃ ደርሷል!</b>\n\n"
-        f"👤 <b>ስም፦</b> {context.user_data.get('name')}\n"
+    # Exactly matching the structure in the screenshot
+    hub_message = (
+        "🚨 <b>አዲስ ትእዛዝ ደርሷል!</b> 🚨\n\n"
+        f"👤 <b>የደንበኛ ስም፦</b> {context.user_data.get('name')}\n"
         f"📞 <b>ስልክ፦</b> {context.user_data.get('phone')}\n"
         f"📍 <b>አድራሻ፦</b> {context.user_data.get('address')}\n"
-        f"📦 <b>ብዛት፦</b> {context.user_data.get('quantity')}\n"
-        f"🔗 <b>የተጠቃሚ ID:</b> <code>{user.id}</code>\n"
-        f"👤 <b>Username:</b> @{user.username if user.username else 'የለውም'}\n"
+        f"🔢 <b>ብዛት፦</b> {context.user_data.get('quantity')}\n\n"
+        f"📣 <b>የመጣበት ቻናል/Group፦</b> {source_chat}\n"
+        f"💬 <b>የደንበኛው Telegram፦</b> @{user.username if user.username else 'የለውም'}\n"
+        f"(ID: <code>{user.id}</code>)"
     )
 
     await update.message.reply_text(
@@ -312,11 +316,13 @@ async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-    keyboard = [[InlineKeyboardButton("✅ ትእዛዙን አረጋግጥ (Approve)", callback_data=f"approve_order_{user.id}")]]
+    # Send order to Orders Hub channel
     try:
-        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=summary, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+        await context.bot.send_message(chat_id=ORDERS_HUB_ID, text=hub_message, parse_mode="HTML")
     except Exception as e:
-        logging.error(f"Failed to send order to admin: {e}")
+        logging.error(f"Failed to send order to Orders Hub: {e}")
+        # Fallback send to admin private chat if Orders Hub fails
+        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=hub_message, parse_mode="HTML")
 
     return ConversationHandler.END
 
@@ -364,13 +370,25 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------------------------------------
 async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id if update.effective_user else None
+    
+    # If channel post, get channel title/id
+    chat_info = ""
+    if update.channel_post:
+        chat_info = f"{update.channel_post.chat.title} | ID: {update.channel_post.chat.id}"
+    elif update.message and (update.message.chat.type in ['group', 'supergroup']):
+        chat_info = f"{update.message.chat.title} | ID: {update.message.chat.id}"
+
     if not sender_id:
         return
 
     active, expire_date = is_user_active(sender_id)
 
     if active:
-        keyboard = [[InlineKeyboardButton("🛒 Order Now / አሁኑኑ ይዘዙ", url=f"https://t.me/{context.bot.username}?start=order")]]
+        # Pass channel info inside start deep link
+        clean_chat_info = chat_info.replace(" ", "_") if chat_info else "Channel"
+        start_url = f"https://t.me/{context.bot.username}?start=order_{clean_chat_info}"
+        
+        keyboard = [[InlineKeyboardButton("🛒 Order Now / አሁኑኑ ይዘዙ", url=start_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         try:
@@ -389,7 +407,7 @@ async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=sender_id,
                 text=(
-                    "⚠️ <b>የአገልግሎት ጊዜዎ ወይም የ 3 ቀን ነፃ ሙከራዎ አብቅቷል!</b>\n\n"
+                    "⚠️ <b>የ 3 ቀን ነፃ ሙከራዎ ወይም የአገልግሎት ጊዜዎ አብቅቷል!</b>\n\n"
                     "በቻናልዎ/ግሩፕዎ ላይ የ 'Order Now' አዝራር መጨመር ለመቀጠል እባክዎ የክፍያ ፓኬጅ ይምረጡ፦"
                 ),
                 parse_mode="HTML",
@@ -399,29 +417,7 @@ async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 # ---------------------------------------------------------
-# 9. ADMIN COMMANDS
-# ---------------------------------------------------------
-async def approve_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return
-
-    try:
-        target_user_id = int(context.args[0])
-        days = int(context.args[1])
-        
-        expire_str = set_user_sub(target_user_id, days)
-
-        await update.message.reply_text(f"✅ ተጠቃሚ <code>{target_user_id}</code> ለ {days} ቀናት አክቲቭ ሆኗል! (እስከ {expire_str})", parse_mode="HTML")
-        await context.bot.send_message(
-            chat_id=target_user_id,
-            text=f"🎉 <b>ክፍያዎ ጸድቋል!</b>\n\nአገልግሎቱ ለ {days} ቀናት ተራዝሟል (እስከ {expire_str} ድረስ)። ቦቱን መጠቀም መቀጠል ይችላሉ!",
-            parse_mode="HTML"
-        )
-    except Exception:
-        await update.message.reply_text("❌ ስህተት፦ <code>/approve USER_ID DAYS</code> ብለው ያስገቡ።", parse_mode="HTML")
-
-# ---------------------------------------------------------
-# 10. MAIN FUNCTION
+# 9. MAIN FUNCTION
 # ---------------------------------------------------------
 def main():
     keep_alive()
@@ -452,7 +448,6 @@ def main():
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("approve", approve_user))
     
     # Handle channel/group posts automatically
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_posts))
